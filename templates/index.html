@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Event Visualizer</title>
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100">
+    <div class="container mx-auto p-4">
+        <h1 class="text-2xl font-bold mb-4">Event Visualizer</h1>
+        
+        <div class="mb-4">
+            <label for="filter" class="block mb-2">Filter by timestamp:</label>
+            <input type="datetime-local" id="filter" name="filter" class="border p-2 rounded"
+                   hx-get="/filter"
+                   hx-trigger="change"
+                   hx-target="#events-table"
+                   hx-swap="innerHTML"
+                   hx-include="[name='show-description'],[name='show-source'],[name='show-severity']">
+        </div>
+        
+        <div class="mb-4" id="checkbox-container">
+            <label class="inline-flex items-center">
+                <input type="checkbox" class="form-checkbox" id="show-description" name="show-description"
+                       hx-get="/events"
+                       hx-trigger="change"
+                       hx-target="#events-table"
+                       hx-swap="innerHTML"
+                       hx-include="[name='show-source'],[name='show-severity']">
+                <span class="ml-2">Show Description</span>
+            </label>
+            <label class="inline-flex items-center ml-4">
+                <input type="checkbox" class="form-checkbox" id="show-source" name="show-source"
+                       hx-get="/events"
+                       hx-trigger="change"
+                       hx-target="#events-table"
+                       hx-swap="innerHTML"
+                       hx-include="[name='show-description'],[name='show-severity']">
+                <span class="ml-2">Show Source</span>
+            </label>
+            <label class="inline-flex items-center ml-4">
+                <input type="checkbox" class="form-checkbox" id="show-severity" name="show-severity"
+                       hx-get="/events"
+                       hx-trigger="change"
+                       hx-target="#events-table"
+                       hx-swap="innerHTML"
+                       hx-include="[name='show-description'],[name='show-source']">
+                <span class="ml-2">Show Severity</span>
+            </label>
+        </div>
+        
+        <div id="events-table" hx-get="/events" hx-trigger="load" hx-include="#checkbox-container">
+            <!-- Events table will be loaded here -->
+        </div>
+    </div>
+</body>
+</html>
