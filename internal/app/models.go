@@ -9,5 +9,4 @@ type Event struct {
 	Timestamp   time.Time
 	Source      string
 	Severity    string
-	TotalCount  int
 }
