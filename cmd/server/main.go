@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"fmt"
 	"html/template"
 	"log"
 	"math"
@@ -210,28 +211,30 @@ func scanEvents(rows *sql.Rows, columns []app.Column) ([]app.Event, error) {
 func renderEventsTable(w http.ResponseWriter, events []app.Event, columns []app.Column, currentPage, totalCount int) {
 	w.Header().Set("Content-Type", "text/html")
 
+	// Calculate the grid columns based on the number of visible columns
+	gridCols := len(columns)
+	gridClass := fmt.Sprintf("grid-cols-%d", gridCols)
+
 	// Render table header
 	w.Write([]byte(`
-		<table class="w-full bg-white shadow-md rounded mb-4">
-			<thead>
-				<tr class="bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
+		<div class="w-full bg-white shadow-md rounded mb-4 overflow-x-auto">
+			<div class="grid ` + gridClass + ` gap-x-4 bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
 	`))
 
 	for _, col := range columns {
-		w.Write([]byte(`<th class="py-3 px-6 text-left">` + col.Name + `</th>`))
+		w.Write([]byte(`<div class="py-3 px-6 text-left whitespace-nowrap overflow-hidden text-ellipsis">` + col.Name + `</div>`))
 	}
 
 	w.Write([]byte(`
-				</tr>
-			</thead>
-			<tbody class="text-gray-600 text-sm font-light">
+			</div>
+			<div class="text-gray-600 text-sm font-light">
 	`))
 
 	// Render table rows
 	for _, e := range events {
-		w.Write([]byte(`<tr class="border-b border-gray-200 hover:bg-gray-100">`))
+		w.Write([]byte(`<div class="grid ` + gridClass + ` gap-x-4 border-b border-gray-200 hover:bg-gray-100">`))
 		for _, col := range columns {
-			w.Write([]byte(`<td class="py-3 px-6 text-left">`))
+			w.Write([]byte(`<div class="py-3 px-6 text-left whitespace-nowrap overflow-hidden text-ellipsis">`))
 			switch col.Name {
 			case "ID":
 				w.Write([]byte(strconv.FormatInt(e.ID, 10)))
@@ -246,17 +249,17 @@ func renderEventsTable(w http.ResponseWriter, events []app.Event, columns []app.
 			case "Severity":
 				w.Write([]byte(e.Severity))
 			}
-			w.Write([]byte(`</td>`))
+			w.Write([]byte(`</div>`))
 		}
-		w.Write([]byte(`</tr>`))
+		w.Write([]byte(`</div>`))
 	}
 
 	w.Write([]byte(`
-			</tbody>
-		</table>
+			</div>
+		</div>
 	`))
 
-	// Add pagination controls
+	// Render pagination controls
 	totalPages := int(math.Ceil(float64(totalCount) / float64(eventsPerPage)))
 	w.Write([]byte(`
 		<div class="flex justify-between items-center mt-4">
@@ -271,7 +274,8 @@ func renderEventsTable(w http.ResponseWriter, events []app.Event, columns []app.
 			<button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mr-2"
 				hx-get="/events?page=` + strconv.Itoa(currentPage-1) + `"
 				hx-target="#events-table"
-				hx-swap="innerHTML">
+				hx-swap="innerHTML"
+				hx-include="[name^='show-']">
 				Previous
 			</button>
 		`))
@@ -282,7 +286,8 @@ func renderEventsTable(w http.ResponseWriter, events []app.Event, columns []app.
 			<button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
 				hx-get="/events?page=` + strconv.Itoa(currentPage+1) + `"
 				hx-target="#events-table"
-				hx-swap="innerHTML">
+				hx-swap="innerHTML"
+				hx-include="[name^='show-']">
 				Next
 			</button>
 		`))

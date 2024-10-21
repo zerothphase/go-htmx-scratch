@@ -7,9 +7,9 @@ type Column struct {
 }
 
 var AvailableColumns = []Column{
+	{Name: "Timestamp", DBField: "timestamp", ShowByDefault: true},
 	{Name: "ID", DBField: "id", ShowByDefault: true},
 	{Name: "Name", DBField: "name", ShowByDefault: true},
-	{Name: "Timestamp", DBField: "timestamp", ShowByDefault: true},
 	{Name: "Description", DBField: "description", ShowByDefault: false},
 	{Name: "Source", DBField: "source", ShowByDefault: false},
 	{Name: "Severity", DBField: "severity", ShowByDefault: false},
