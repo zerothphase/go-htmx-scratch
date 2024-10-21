@@ -250,6 +250,47 @@ func scanEvents(rows *sql.Rows, columns []app.Column) ([]app.Event, error) {
 func renderEventsTable(w http.ResponseWriter, events []app.Event, columns []app.Column, currentPage, totalCount int) {
 	w.Header().Set("Content-Type", "text/html")
 
+	totalPages := int(math.Ceil(float64(totalCount) / float64(eventsPerPage)))
+
+	// Render pagination controls at the top
+	w.Write([]byte(`
+		<div class="flex justify-between items-center mb-4">
+			<div>
+				Showing page ` + strconv.Itoa(currentPage) + ` of ` + strconv.Itoa(totalPages) + `
+			</div>
+			<div>
+	`))
+
+	if currentPage > 1 {
+		w.Write([]byte(`
+				<button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mr-2"
+					hx-get="/events?page=` + strconv.Itoa(currentPage-1) + `"
+					hx-target="#events-table"
+					hx-swap="innerHTML"
+					hx-include="form">
+					Previous
+				</button>
+			`))
+	}
+
+	if currentPage < totalPages {
+		w.Write([]byte(`
+				<button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
+					hx-get="/events?page=` + strconv.Itoa(currentPage+1) + `"
+					hx-target="#events-table"
+					hx-swap="innerHTML"
+					hx-include="form">
+					Next
+				</button>
+			`))
+	}
+
+	w.Write([]byte(`
+			</div>
+		</div>
+	`))
+
+	// Render table
 	gridCols := len(columns)
 	gridClass := fmt.Sprintf("grid-cols-%d", gridCols)
 
@@ -288,44 +329,6 @@ func renderEventsTable(w http.ResponseWriter, events []app.Event, columns []app.
 			w.Write([]byte(`</div>`))
 		}
 		w.Write([]byte(`</div>`))
-	}
-
-	w.Write([]byte(`
-			</div>
-		</div>
-	`))
-
-	totalPages := int(math.Ceil(float64(totalCount) / float64(eventsPerPage)))
-	w.Write([]byte(`
-		<div class="flex justify-between items-center mt-4">
-			<div>
-				Showing page ` + strconv.Itoa(currentPage) + ` of ` + strconv.Itoa(totalPages) + `
-			</div>
-			<div>
-	`))
-
-	if currentPage > 1 {
-		w.Write([]byte(`
-			<button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded mr-2"
-				hx-get="/events?page=` + strconv.Itoa(currentPage-1) + `"
-				hx-target="#events-table"
-				hx-swap="innerHTML"
-				hx-include="form">
-				Previous
-			</button>
-		`))
-	}
-
-	if currentPage < totalPages {
-		w.Write([]byte(`
-			<button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-				hx-get="/events?page=` + strconv.Itoa(currentPage+1) + `"
-				hx-target="#events-table"
-				hx-swap="innerHTML"
-				hx-include="form">
-				Next
-			</button>
-		`))
 	}
 
 	w.Write([]byte(`
