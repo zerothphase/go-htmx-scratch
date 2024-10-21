@@ -18,37 +18,23 @@
                    hx-trigger="change"
                    hx-target="#events-table"
                    hx-swap="innerHTML"
-                   hx-include="[name='show-description'],[name='show-source'],[name='show-severity']">
+                   hx-include="[name^='show-']">
         </div>
         
         <div class="mb-4" id="checkbox-container">
-            <label class="inline-flex items-center">
-                <input type="checkbox" class="form-checkbox" id="show-description" name="show-description"
+            {{range .Columns}}
+            {{if not .ShowByDefault}}
+            <label class="inline-flex items-center mr-4">
+                <input type="checkbox" class="form-checkbox" id="show-{{lower .Name}}" name="show-{{lower .Name}}"
                        hx-get="/events"
                        hx-trigger="change"
                        hx-target="#events-table"
                        hx-swap="innerHTML"
-                       hx-include="[name='show-source'],[name='show-severity']">
-                <span class="ml-2">Show Description</span>
+                       hx-include="[name^='show-']">
+                <span class="ml-2">Show {{.Name}}</span>
             </label>
-            <label class="inline-flex items-center ml-4">
-                <input type="checkbox" class="form-checkbox" id="show-source" name="show-source"
-                       hx-get="/events"
-                       hx-trigger="change"
-                       hx-target="#events-table"
-                       hx-swap="innerHTML"
-                       hx-include="[name='show-description'],[name='show-severity']">
-                <span class="ml-2">Show Source</span>
-            </label>
-            <label class="inline-flex items-center ml-4">
-                <input type="checkbox" class="form-checkbox" id="show-severity" name="show-severity"
-                       hx-get="/events"
-                       hx-trigger="change"
-                       hx-target="#events-table"
-                       hx-swap="innerHTML"
-                       hx-include="[name='show-description'],[name='show-source']">
-                <span class="ml-2">Show Severity</span>
-            </label>
+            {{end}}
+            {{end}}
         </div>
         
         <div id="events-table" hx-get="/events" hx-trigger="load" hx-include="#checkbox-container">

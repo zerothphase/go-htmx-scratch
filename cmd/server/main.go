@@ -7,17 +7,19 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/zerothphase/go-htmx-scratch/internal/app"
 
 	"github.com/gorilla/mux"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/zerothphase/go-htmx-scratch/internal/app"
 )
-
-const eventsPerPage = 25
 
 var db *sql.DB
 var tmpl *template.Template
+
+const eventsPerPage = 50
 
 func main() {
 	var err error
@@ -27,9 +29,13 @@ func main() {
 	}
 	defer db.Close()
 
-	initDB()
+	// Define custom template functions
+	funcMap := template.FuncMap{
+		"lower": strings.ToLower,
+	}
 
-	tmpl, err = template.ParseFiles("templates/index.html")
+	// Parse the template with the custom function map
+	tmpl, err = template.New("index.html").Funcs(funcMap).ParseFiles("templates/index.html")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -43,86 +49,84 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", r))
 }
 
-func initDB() {
-	_, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS events (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT,
-			description TEXT,
-			timestamp DATETIME,
-			source TEXT,
-			severity TEXT
-		)
-	`)
-	if err != nil {
-		log.Fatal(err)
-	}
-}
-
-// Implement handleIndex, handleEvents, and handleFilter functions here
-
 func handleIndex(w http.ResponseWriter, r *http.Request) {
-	tmpl.Execute(w, nil)
+	data := struct {
+		Columns []app.Column
+	}{
+		Columns: app.AvailableColumns,
+	}
+	tmpl.Execute(w, data)
 }
 
 func handleEvents(w http.ResponseWriter, r *http.Request) {
-	showDescription := r.URL.Query().Get("show-description") == "on"
-	showSource := r.URL.Query().Get("show-source") == "on"
-	showSeverity := r.URL.Query().Get("show-severity") == "on"
+	columns := getSelectedColumns(r)
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if page < 1 {
 		page = 1
 	}
 
-	events, totalCount, err := getEvents(page, showDescription, showSource, showSeverity)
+	events, totalCount, err := getEvents(page, columns)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	renderEventsTable(w, events, showDescription, showSource, showSeverity, page, totalCount)
+	renderEventsTable(w, events, columns, page, totalCount)
 }
 
 func handleFilter(w http.ResponseWriter, r *http.Request) {
 	filter := r.URL.Query().Get("filter")
-	showDescription := r.URL.Query().Get("show-description") == "on"
-	showSource := r.URL.Query().Get("show-source") == "on"
-	showSeverity := r.URL.Query().Get("show-severity") == "on"
+	columns := getSelectedColumns(r)
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	if page < 1 {
 		page = 1
 	}
 
-	events, totalCount, err := getFilteredEvents(filter, page, showDescription, showSource, showSeverity)
+	events, totalCount, err := getFilteredEvents(filter, page, columns)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	renderEventsTable(w, events, showDescription, showSource, showSeverity, page, totalCount)
+	renderEventsTable(w, events, columns, page, totalCount)
 }
 
-func getEvents(page int, showDescription, showSource, showSeverity bool) ([]app.Event, int, error) {
+func getSelectedColumns(r *http.Request) []app.Column {
+	selectedColumns := make(map[string]app.Column)
+
+	// First, add all default columns
+	for _, col := range app.GetDefaultColumns() {
+		selectedColumns[col.Name] = col
+	}
+
+	// Then, add any additional selected columns
+	for _, col := range app.AvailableColumns {
+		if r.URL.Query().Get("show-"+strings.ToLower(col.Name)) == "on" {
+			selectedColumns[col.Name] = col
+		}
+	}
+
+	// Convert the map to a slice, preserving the original order
+	var result []app.Column
+	for _, col := range app.AvailableColumns {
+		if _, ok := selectedColumns[col.Name]; ok {
+			result = append(result, col)
+		}
+	}
+
+	return result
+}
+
+func getEvents(page int, columns []app.Column) ([]app.Event, int, error) {
 	offset := (page - 1) * eventsPerPage
 
-	// Get total count
 	var totalCount int
 	err := db.QueryRow("SELECT COUNT(*) FROM events").Scan(&totalCount)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// Get paginated events
-	query := "SELECT id, name, timestamp"
-	if showDescription {
-		query += ", description"
-	}
-	if showSource {
-		query += ", source"
-	}
-	if showSeverity {
-		query += ", severity"
-	}
+	query := buildSelectQuery(columns)
 	query += " FROM events ORDER BY timestamp DESC LIMIT ? OFFSET ?"
 
 	rows, err := db.Query(query, eventsPerPage, offset)
@@ -131,51 +135,24 @@ func getEvents(page int, showDescription, showSource, showSeverity bool) ([]app.
 	}
 	defer rows.Close()
 
-	var events []app.Event
-	for rows.Next() {
-		var e app.Event
-		var scanArgs []interface{}
-		scanArgs = append(scanArgs, &e.ID, &e.Name, &e.Timestamp)
-		if showDescription {
-			scanArgs = append(scanArgs, &e.Description)
-		}
-		if showSource {
-			scanArgs = append(scanArgs, &e.Source)
-		}
-		if showSeverity {
-			scanArgs = append(scanArgs, &e.Severity)
-		}
-		err := rows.Scan(scanArgs...)
-		if err != nil {
-			return nil, 0, err
-		}
-		events = append(events, e)
+	events, err := scanEvents(rows, columns)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	return events, totalCount, nil
 }
 
-func getFilteredEvents(filter string, page int, showDescription, showSource, showSeverity bool) ([]app.Event, int, error) {
+func getFilteredEvents(filter string, page int, columns []app.Column) ([]app.Event, int, error) {
 	offset := (page - 1) * eventsPerPage
 
-	// Get total count
 	var totalCount int
 	err := db.QueryRow("SELECT COUNT(*) FROM events WHERE timestamp >= ?", filter).Scan(&totalCount)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// Get paginated filtered events
-	query := "SELECT id, name, timestamp"
-	if showDescription {
-		query += ", description"
-	}
-	if showSource {
-		query += ", source"
-	}
-	if showSeverity {
-		query += ", severity"
-	}
+	query := buildSelectQuery(columns)
 	query += " FROM events WHERE timestamp >= ? ORDER BY timestamp DESC LIMIT ? OFFSET ?"
 
 	rows, err := db.Query(query, filter, eventsPerPage, offset)
@@ -184,51 +161,64 @@ func getFilteredEvents(filter string, page int, showDescription, showSource, sho
 	}
 	defer rows.Close()
 
-	var events []app.Event
-	for rows.Next() {
-		var e app.Event
-		var scanArgs []interface{}
-		scanArgs = append(scanArgs, &e.ID, &e.Name, &e.Timestamp)
-		if showDescription {
-			scanArgs = append(scanArgs, &e.Description)
-		}
-		if showSource {
-			scanArgs = append(scanArgs, &e.Source)
-		}
-		if showSeverity {
-			scanArgs = append(scanArgs, &e.Severity)
-		}
-		err := rows.Scan(scanArgs...)
-		if err != nil {
-			return nil, 0, err
-		}
-		events = append(events, e)
+	events, err := scanEvents(rows, columns)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	return events, totalCount, nil
 }
 
-func renderEventsTable(w http.ResponseWriter, events []app.Event, showDescription, showSource, showSeverity bool, currentPage, totalCount int) {
+func buildSelectQuery(columns []app.Column) string {
+	var fields []string
+	for _, col := range columns {
+		fields = append(fields, col.DBField)
+	}
+	return "SELECT " + strings.Join(fields, ", ")
+}
+
+func scanEvents(rows *sql.Rows, columns []app.Column) ([]app.Event, error) {
+	var events []app.Event
+	for rows.Next() {
+		var e app.Event
+		var scanArgs []interface{}
+		for _, col := range columns {
+			switch col.Name {
+			case "ID":
+				scanArgs = append(scanArgs, &e.ID)
+			case "Name":
+				scanArgs = append(scanArgs, &e.Name)
+			case "Description":
+				scanArgs = append(scanArgs, &e.Description)
+			case "Timestamp":
+				scanArgs = append(scanArgs, &e.Timestamp)
+			case "Source":
+				scanArgs = append(scanArgs, &e.Source)
+			case "Severity":
+				scanArgs = append(scanArgs, &e.Severity)
+			}
+		}
+		err := rows.Scan(scanArgs...)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+	return events, nil
+}
+
+func renderEventsTable(w http.ResponseWriter, events []app.Event, columns []app.Column, currentPage, totalCount int) {
 	w.Header().Set("Content-Type", "text/html")
 
-	// Render table
+	// Render table header
 	w.Write([]byte(`
 		<table class="w-full bg-white shadow-md rounded mb-4">
 			<thead>
 				<tr class="bg-gray-200 text-gray-600 uppercase text-sm leading-normal">
-					<th class="py-3 px-6 text-left">ID</th>
-					<th class="py-3 px-6 text-left">Name</th>
-					<th class="py-3 px-6 text-left">Timestamp</th>
 	`))
 
-	if showDescription {
-		w.Write([]byte(`<th class="py-3 px-6 text-left">Description</th>`))
-	}
-	if showSource {
-		w.Write([]byte(`<th class="py-3 px-6 text-left">Source</th>`))
-	}
-	if showSeverity {
-		w.Write([]byte(`<th class="py-3 px-6 text-left">Severity</th>`))
+	for _, col := range columns {
+		w.Write([]byte(`<th class="py-3 px-6 text-left">` + col.Name + `</th>`))
 	}
 
 	w.Write([]byte(`
@@ -237,24 +227,27 @@ func renderEventsTable(w http.ResponseWriter, events []app.Event, showDescriptio
 			<tbody class="text-gray-600 text-sm font-light">
 	`))
 
+	// Render table rows
 	for _, e := range events {
-		w.Write([]byte(`
-			<tr class="border-b border-gray-200 hover:bg-gray-100">
-				<td class="py-3 px-6 text-left whitespace-nowrap">` + strconv.FormatInt(e.ID, 10) + `</td>
-				<td class="py-3 px-6 text-left">` + e.Name + `</td>
-				<td class="py-3 px-6 text-left">` + e.Timestamp.Format(time.RFC3339) + `</td>
-		`))
-
-		if showDescription {
-			w.Write([]byte(`<td class="py-3 px-6 text-left">` + e.Description + `</td>`))
+		w.Write([]byte(`<tr class="border-b border-gray-200 hover:bg-gray-100">`))
+		for _, col := range columns {
+			w.Write([]byte(`<td class="py-3 px-6 text-left">`))
+			switch col.Name {
+			case "ID":
+				w.Write([]byte(strconv.FormatInt(e.ID, 10)))
+			case "Name":
+				w.Write([]byte(e.Name))
+			case "Description":
+				w.Write([]byte(e.Description))
+			case "Timestamp":
+				w.Write([]byte(e.Timestamp.Format(time.RFC3339)))
+			case "Source":
+				w.Write([]byte(e.Source))
+			case "Severity":
+				w.Write([]byte(e.Severity))
+			}
+			w.Write([]byte(`</td>`))
 		}
-		if showSource {
-			w.Write([]byte(`<td class="py-3 px-6 text-left">` + e.Source + `</td>`))
-		}
-		if showSeverity {
-			w.Write([]byte(`<td class="py-3 px-6 text-left">` + e.Severity + `</td>`))
-		}
-
 		w.Write([]byte(`</tr>`))
 	}
 
